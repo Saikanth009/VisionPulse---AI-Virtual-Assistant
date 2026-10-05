@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.env
+
+# Baseline experiment artifacts
+*.h5
+*.pb
+*.onnx
+models/visionpulse_cnn_baseline.keras
+
+# Data files (keep folder structure)
+data/train/*
+data/validation/*
+data/test/*
+!data/train/.gitkeep
+!data/validation/.gitkeep
+!data/test/.gitkeep
+!data/README.md
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Streamlit
+.streamlit/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

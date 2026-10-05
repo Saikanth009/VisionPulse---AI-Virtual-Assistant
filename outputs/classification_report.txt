@@ -1,0 +1,27 @@
+===============================================================
+VisionPulse CNN — Model Evaluation & Classification Report
+===============================================================
+
+Overall Accuracy:  98.67%
+Weighted Precision: 98.75%
+Weighted Recall:    98.67%
+Weighted F1-Score:  98.67%
+
+Detailed Per-Class Performance:
+---------------------------------------------------------------
+              precision    recall  f1-score   support
+
+    airplane     1.0000    1.0000    1.0000        15
+  automobile     1.0000    1.0000    1.0000        15
+        bird     1.0000    1.0000    1.0000        15
+         cat     0.9375    1.0000    0.9677        15
+        deer     0.9375    1.0000    0.9677        15
+         dog     1.0000    0.9333    0.9655        15
+        frog     1.0000    1.0000    1.0000        15
+       horse     1.0000    0.9333    0.9655        15
+        ship     1.0000    1.0000    1.0000        15
+       truck     1.0000    1.0000    1.0000        15
+
+    accuracy                         0.9867       150
+   macro avg     0.9875    0.9867    0.9867       150
+weighted avg     0.9875    0.9867    0.9867       150
