@@ -93,7 +93,8 @@ def main():
         unsafe_allow_html=True,
     )
     st.write(
-        "Upload an image for a brief description of the visible subject and its colors."
+        "Upload an image for a detailed description of the visible scene, "
+        "including its subject and surroundings."
     )
 
     uploaded_file = st.file_uploader(
@@ -147,9 +148,6 @@ def main():
         f"{_escape_html(result['full_description'])}</div>",
         unsafe_allow_html=True,
     )
-
-    st.markdown("### Main colors")
-    st.write(", ".join(result["colors"]) if result["colors"] else "Not measured")
 
     audio_key = image_hash
     if st.session_state.get("audio_key") != audio_key:

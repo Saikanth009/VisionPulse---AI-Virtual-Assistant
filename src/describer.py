@@ -22,15 +22,18 @@ MAX_IMAGE_SIDE = 1024
 logger = logging.getLogger(__name__)
 
 VISION_PROMPT = """
-In English, describe the main visible object or subject, its visible color, and
-two or three directly observable details such as shape, position, surrounding
-objects, or visible activity. Use up to two concise sentences. Do not infer a
-purpose, identity, or hidden details. If the image does not support a reliable
-description, state which details cannot be determined. Never identify a person by name.
+In English, give a clear, detailed description of the visible scene in three to
+five sentences. Start with the overall scene and main subject, then describe
+observable details such as shape, position, foreground and background, nearby
+objects, and visible activity. Do not name or guess colors. Mention readable
+text only when it is clearly legible. Do not infer a purpose, identity,
+relationship, or hidden detail, and do not add details just to make the
+description longer. If the image does not support a reliable description, say
+what cannot be determined. Never identify a person by name.
 Return only a JSON object with these fields:
-summary (up to two concise English sentences), objects (list of clearly visible
-main object names only), colors (list of clearly visible color names),
-text_in_image (readable text if clearly visible, otherwise "Not clear"),
+summary (three to five concise English sentences), objects (list of clearly visible
+main object names only), text_in_image (readable text if clearly visible,
+otherwise "Not clear"),
 lighting (a short quality note only if very dark or blurry),
 safety_notes (short note only if an obvious hazard is visible, otherwise "Not assessed"),
 people_count_estimate ("Unclear" unless clearly countable),
@@ -42,7 +45,6 @@ VISION_RESPONSE_SCHEMA = {
     "properties": {
         "summary": {"type": "STRING"},
         "objects": {"type": "ARRAY", "items": {"type": "STRING"}},
-        "colors": {"type": "ARRAY", "items": {"type": "STRING"}},
         "text_in_image": {"type": "STRING"},
         "lighting": {"type": "STRING"},
         "safety_notes": {"type": "STRING"},
@@ -53,7 +55,6 @@ VISION_RESPONSE_SCHEMA = {
     "required": [
         "summary",
         "objects",
-        "colors",
         "text_in_image",
         "lighting",
         "safety_notes",
@@ -71,60 +72,13 @@ def prepare_image(image: Image.Image) -> Image.Image:
     return image
 
 
-def _color_name(red: float, green: float, blue: float) -> str:
-    high = max(red, green, blue)
-    low = min(red, green, blue)
-    if high < 45:
-        return "black"
-    if low > 220:
-        return "white"
-    if high - low < 22:
-        return "gray" if high < 190 else "white"
-    if red > green * 1.35 and red > blue * 1.25:
-        return "orange" if green > red * 0.45 else "red"
-    if green > red * 1.3 and green > blue * 1.15:
-        return "green"
-    if blue > red * 1.3 and blue > green * 1.15:
-        return "blue"
-    if red > 150 and green > 145 and blue < 115:
-        return "yellow"
-    if blue > 100 and red > 95 and green < 120:
-        return "purple"
-    if red > green * 1.15 and green > blue * 1.15:
-        return "brown"
-    return "gray"
-
-
 def analyze_image_features(image: Image.Image) -> dict:
-    """Return pixel-derived brightness, contrast, blur, and k-means color names."""
+    """Return pixel-derived brightness, contrast, and blur measurements."""
     rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     brightness = float(np.mean(gray))
     contrast = float(np.std(gray))
     blur_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-
-    pixels = rgb.reshape(-1, 3)
-    if len(pixels) > 10000:
-        indices = np.linspace(0, len(pixels) - 1, 10000, dtype=np.int32)
-        pixels = pixels[indices]
-    samples = np.float32(pixels)
-    cluster_count = min(3, len(samples))
-    cv2.setRNGSeed(42)
-    _, labels, centers = cv2.kmeans(
-        samples,
-        cluster_count,
-        None,
-        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0),
-        3,
-        cv2.KMEANS_PP_CENTERS,
-    )
-    counts = np.bincount(labels.flatten(), minlength=cluster_count)
-    ordered_centers = centers[np.argsort(counts)[::-1]]
-    colors = []
-    for red, green, blue in ordered_centers:
-        name = _color_name(float(red), float(green), float(blue))
-        if name not in colors:
-            colors.append(name)
 
     if brightness < 55:
         lighting = f"Very dark (measured mean brightness {brightness:.0f}/255)."
@@ -142,7 +96,6 @@ def analyze_image_features(image: Image.Image) -> dict:
         "brightness": brightness,
         "contrast": contrast,
         "blur_variance": blur_variance,
-        "colors": colors,
         "lighting": lighting,
         "is_dark": brightness < 55,
         "is_blurry": blur_variance < 35,
@@ -203,7 +156,11 @@ def _describe_with_blip(image: Image.Image, fallback_loader: Callable | None) ->
         captioner = load_blip_pipeline()
     else:
         captioner = fallback_loader()
-    results = captioner(image)
+    results = captioner(
+        image,
+        prompt="Describe the visible objects and scene without mentioning colors: ",
+        generate_kwargs={"max_new_tokens": 64, "num_beams": 4},
+    )
     if not results or not isinstance(results[0], dict):
         raise ValueError("The offline caption model returned no caption.")
     caption = results[0].get("generated_text")
@@ -261,11 +218,6 @@ def _finish_description(
             "The image appears blurry; fine details may be difficult to determine."
         )
     if backend == "BLIP":
-        caution.append(
-            "Offline caption; this model does not provide calibrated confidence."
-        )
-
-    if backend == "BLIP":
         objects = []
         text_in_image = "Not analyzed in offline captioning mode."
         people_count = "Not estimated."
@@ -291,7 +243,6 @@ def _finish_description(
                 "do not treat this as a safety check."
             )
 
-    colors = features["colors"]
     lighting = features["lighting"]
     model_lighting = model_result.get("lighting")
     if (
@@ -303,8 +254,6 @@ def _finish_description(
         lighting = f"{model_lighting.strip()} {lighting}"
 
     full_description = summary
-    if colors:
-        full_description += " Main colors: " + ", ".join(colors) + "."
     if caution:
         full_description += " " + " ".join(caution)
 
@@ -312,7 +261,6 @@ def _finish_description(
         "summary": summary,
         "objects": objects,
         "text_in_image": text_in_image,
-        "colors": colors,
         "lighting": lighting,
         "people_count_estimate": people_count,
         "safety_notes": safety_notes,

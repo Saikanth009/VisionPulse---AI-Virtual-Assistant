@@ -3,7 +3,7 @@ VisionPulse — AI Visual Assistant for People with Low Vision
 Image Preprocessing Module (src/preprocessing.py)
 
 Handles image loading, format validation, resizing, pixel normalization,
-tensor preparation, and per-image visual quality extraction (dominant colors, contrast, brightness).
+tensor preparation, and per-image visual quality extraction (contrast and brightness).
 """
 
 import io
@@ -116,49 +116,9 @@ def prepare_input(image_source, target_size=IMAGE_SIZE):
     return input_tensor
 
 
-def analyze_dominant_colors(pil_img):
-    """
-    Extracts the dominant color palette and tone description of an image.
-    """
-    # Downsample image to speed up color analysis
-    small_img = pil_img.resize((50, 50))
-    np_img = np.array(small_img)
-
-    r_mean = float(np.mean(np_img[:, :, 0]))
-    g_mean = float(np.mean(np_img[:, :, 1]))
-    b_mean = float(np.mean(np_img[:, :, 2]))
-
-    # Calculate color dominance
-    total = r_mean + g_mean + b_mean + 1e-5
-    r_ratio = r_mean / total
-    g_ratio = g_mean / total
-    b_ratio = b_mean / total
-
-    # Determine dominant tones
-    if g_ratio > 0.40 and g_ratio > r_ratio and g_ratio > b_ratio:
-        color_desc = "lush green and natural tones"
-    elif b_ratio > 0.40 and b_ratio > r_ratio:
-        color_desc = "cool blue and aquatic hues"
-    elif r_ratio > 0.42 and g_ratio > 0.25:
-        color_desc = "warm orange, yellow, or earthy tones"
-    elif r_ratio > 0.40:
-        color_desc = "rich red or warm crimson tones"
-    elif r_mean > 200 and g_mean > 200 and b_mean > 200:
-        color_desc = "bright white and light silver background"
-    elif r_mean < 70 and g_mean < 70 and b_mean < 70:
-        color_desc = "dark, black, or deep grey tones"
-    elif abs(r_mean - g_mean) < 15 and abs(g_mean - b_mean) < 15:
-        color_desc = "sleek neutral grey and metallic tones"
-    else:
-        color_desc = "balanced multi-colored tones"
-
-    return color_desc
-
-
 def extract_image_properties(image_source):
     """
-    Extracts comprehensive visual properties (brightness, contrast, aspect ratio, color palette)
-    to generate unique per-picture visual descriptions for low-vision accessibility.
+    Extracts measurable visual properties (brightness, contrast, and orientation).
     """
     img = load_image(image_source)
     width, height = img.size
@@ -191,9 +151,6 @@ def extract_image_properties(image_source):
     else:
         orientation = "square framing"
 
-    # Dominant Color Analysis
-    color_desc = analyze_dominant_colors(img)
-
     return {
         "width": width,
         "height": height,
@@ -202,5 +159,4 @@ def extract_image_properties(image_source):
         "brightness_desc": brightness_desc,
         "contrast_desc": contrast_desc,
         "orientation": orientation,
-        "color_desc": color_desc
     }

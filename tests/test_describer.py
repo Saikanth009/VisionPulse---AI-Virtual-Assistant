@@ -4,12 +4,18 @@ import os
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
 from app import _prepare_uploaded_image
-from src.describer import _finish_description, analyze_image_features, describe_image
+from src.describer import (
+    _describe_with_blip,
+    _finish_description,
+    analyze_image_features,
+    describe_image,
+)
+from src.preprocessing import extract_image_properties
 from src.speech import get_web_speech_js
 
 SAMPLE_DIR = Path(__file__).parent / "sample_images"
@@ -21,11 +27,13 @@ class ImageFeatureTests(unittest.TestCase):
         with Image.open(SAMPLE_DIR / filename) as image:
             return image.convert("RGB")
 
-    def test_clear_photo_has_measured_color_and_non_dark_brightness(self):
-        features = analyze_image_features(self.read_image("clear_objects.jpg"))
+    def test_clear_photo_has_measured_quality_without_color_predictions(self):
+        image = self.read_image("clear_objects.jpg")
+        features = analyze_image_features(image)
         self.assertGreater(features["brightness"], 55)
-        self.assertTrue(features["colors"])
         self.assertGreaterEqual(features["contrast"], 0)
+        self.assertNotIn("colors", features)
+        self.assertNotIn("color_desc", extract_image_properties(image))
 
     def test_image_with_visible_text_is_a_valid_image(self):
         image = self.read_image("image_with_text.png")
@@ -80,12 +88,26 @@ class SpeechOutputTests(unittest.TestCase):
 
 
 class DescriptionHonestyTests(unittest.TestCase):
+    def test_blip_requests_a_longer_caption_for_more_visible_detail(self):
+        with Image.open(SAMPLE_DIR / "clear_objects.jpg") as source:
+            image = source.convert("RGB")
+        captioner = Mock(
+            return_value=[{"generated_text": "A flower beside several leaves."}]
+        )
+        result = _describe_with_blip(image, lambda: captioner)
+        self.assertEqual(result, "A flower beside several leaves.")
+        captioner.assert_called_once_with(
+            image,
+            prompt="Describe the visible objects and scene without mentioning colors: ",
+            generate_kwargs={"max_new_tokens": 64, "num_beams": 4},
+        )
+
     def test_high_confidence_description_is_not_claimed_to_be_perfect(self):
         with Image.open(SAMPLE_DIR / "clear_objects.jpg") as source:
             image = source.convert("RGB")
         result = _finish_description(
             {
-                "summary": "A red flower with layered petals stands in front of green leaves.",
+                "summary": "A flower with layered petals stands in front of several leaves.",
                 "objects": ["flower", "leaves"],
                 "text_in_image": "Not clear",
                 "lighting": "",
@@ -97,10 +119,24 @@ class DescriptionHonestyTests(unittest.TestCase):
             analyze_image_features(image),
             "Gemini",
         )
-        self.assertIn("red flower", result["summary"])
-        self.assertIn("Main colors:", result["full_description"])
+        self.assertIn("flower", result["summary"])
+        self.assertNotIn("Main colors:", result["full_description"])
+        self.assertNotIn("colors", result)
         self.assertNotIn("100%", result["full_description"])
         self.assertNotIn("I'm not sure", result["full_description"])
+
+    def test_offline_caption_does_not_repeat_backend_disclaimer(self):
+        with Image.open(SAMPLE_DIR / "clear_objects.jpg") as source:
+            image = source.convert("RGB")
+        result = _finish_description(
+            {"summary": "A flower with layered petals beside several leaves."},
+            analyze_image_features(image),
+            "BLIP",
+        )
+        self.assertIn("flower", result["full_description"])
+        self.assertNotIn("Main colors:", result["full_description"])
+        self.assertNotIn("colors", result)
+        self.assertNotIn("Offline caption", result["full_description"])
 
     def test_low_confidence_suppresses_unverified_scene_details(self):
         with Image.open(SAMPLE_DIR / "clear_objects.jpg") as source:
@@ -123,7 +159,8 @@ class DescriptionHonestyTests(unittest.TestCase):
         self.assertIn("Vision model confidence is low", result["summary"])
         self.assertNotIn("I'm not sure", result["full_description"])
         self.assertEqual(result["objects"], [])
-        self.assertIn("Main colors:", result["full_description"])
+        self.assertNotIn("Main colors:", result["full_description"])
+        self.assertNotIn("colors", result)
         self.assertNotIn("Safety notes:", result["full_description"])
         self.assertNotIn("People estimate:", result["full_description"])
         self.assertIn("model is unsure", result["text_in_image"])

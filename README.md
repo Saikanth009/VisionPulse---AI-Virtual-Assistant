@@ -1,14 +1,16 @@
-# VisionPulse — AI Visual Assistant for People with Low Vision
+4# VisionPulse — AI Visual Assistant for People with Low Vision
 
-VisionPulse turns an uploaded image into a brief description of the visible
-subject and its colors, then offers English browser speech and MP3 playback. It is
-an educational assistive tool, not a navigation guarantee or medical device.
+VisionPulse turns an uploaded image into a cautious, accessible description, then
+offers browser speech and downloadable-in-page MP3 playback. It is an educational
+assistive tool, not a navigation guarantee or medical device.
 
 ## 1. Problem Statement
 
-People with low vision can benefit from a short spoken explanation of an image's
-main visible subject and colors. Users should not rely on it as the sole source
-for decisions involving physical safety.
+People with low vision can benefit from a spoken explanation of image contents.
+VisionPulse describes uploaded photos, visible text, measured image quality, and
+potential visible hazards. It does not label or predict image colors. Users
+should not rely on it as the sole
+source for decisions involving physical safety.
 
 ## 2. Abstract
 
@@ -18,18 +20,18 @@ SHA-256 hash of the file bytes, so a different image triggers a new analysis eve
 if the filename is unchanged.
 
 The primary backend is Google's Gemini vision-language model
-`gemini-2.5-flash`, accessed through `google-genai`. It is prompted to return a
-short English description of the main visible subject, color, and a few directly
-observable details. If no `GEMINI_API_KEY` is configured or the API request fails, the
-app automatically uses Hugging Face's pretrained
-`Salesforce/blip-image-captioning-base` image captioner.
+`gemini-2.5-flash`, accessed through `google-genai`. Its JSON response contains a
+concise summary, visible objects and positions, visible text, people estimate,
+scene notes, and visible safety concerns. If no `GEMINI_API_KEY` is configured or
+the API request fails, the app automatically uses Hugging Face's pretrained
+`Salesforce/blip-image-captioning-base` image captioner. BLIP is a captioning
+fallback: it does not provide reliable OCR, object inventory, people counts, or
+hazard analysis, and the app explicitly says so.
 
-OpenCV and NumPy independently measure mean brightness, contrast, blur using
-variance of Laplacian, and dominant colors using k-means. The app shows the
-measured color names beside the description. Very dark or blurry images and
-low-confidence responses are clearly labeled so the app does not present guesses
-as certain facts. The app provides English Web Speech API playback and gTTS MP3
-audio.
+OpenCV and NumPy independently measure mean brightness, contrast, and blur using
+variance of Laplacian. Very dark or blurry images and low-confidence responses
+are accompanied by an uncertainty warning instead of invented detail.
+The app provides Web Speech API playback and gTTS MP3 audio.
 
 ## 3. Technology Stack
 
@@ -38,9 +40,9 @@ audio.
 - Google Gemini 2.5 Flash through `google-genai` for primary visual description
 - Hugging Face Transformers and PyTorch for offline BLIP captioning
 - Pillow for image decoding, EXIF correction, and resizing
-- OpenCV and NumPy for measured image quality and color analysis
+- OpenCV and NumPy for measured image quality
 - scikit-learn is pinned as the project ML utility dependency
-- English gTTS for MP3 speech; browser Web Speech API for immediate playback
+- gTTS for MP3 speech; browser Web Speech API for immediate playback
 - python-dotenv for local `.env` configuration
 
 ## 4. Technical Explanation
@@ -50,23 +52,20 @@ audio.
 Pillow validates image data, applies `ImageOps.exif_transpose`, converts to RGB,
 and limits the longest side to 1024 pixels before model inference. OpenCV measures
 grayscale mean brightness, standard-deviation contrast, and variance of Laplacian
-as a blur indicator. OpenCV k-means clusters sampled RGB pixels; cluster centers
-are mapped to simple color names. These are measurable properties, not scene
-recognition.
+as a blur indicator. The app intentionally does not infer or label colors.
 
 ### 4.2 Vision-language model and transfer learning
 
-A vision-language model connects visual input with language output. Gemini accepts both the image and a constrained prompt, returning structured JSON
-that the app validates before display. The fallback is Salesforce BLIP, a
-pretrained image captioning model loaded once and reused. A pretrained model has
-learned visual and language patterns from a large prior training corpus; reusing
-those learned representations is an example of transfer learning. The app does
-not train the captioner on the user's images.
-
-No finite training or test dataset can contain every object that exists. The
-application uses pretrained vision-language models to describe many kinds of
-subjects without restricting uploads to a fixed object-label list; coverage and
-accuracy are still limited by the models' training and the image quality.
+A vision-language model connects visual input with language output. Gemini accepts
+both the image and a constrained prompt, returning structured JSON that the app
+validates before display. The fallback is Salesforce BLIP, a pretrained image
+captioning model loaded once and reused. Gemini is prompted to describe the scene,
+main subject, position, and surrounding details without inventing unsupported
+information or guessing colors. BLIP is allowed a longer generated caption for
+additional visible detail. A pretrained model has learned visual and language
+patterns from a large prior training corpus; reusing those learned representations
+is an example of transfer learning. The app does not train the captioner on the
+user's images.
 
 ### 4.3 Why the original CNN was replaced
 
@@ -80,20 +79,19 @@ experiment only.
 
 ### 4.4 OCR, captions, uncertainty, and limitations
 
-The app requests a concise description, not a complete object inventory or OCR
-transcription. BLIP generates a general image caption; it is not a complete object
-detector. Neither model is perfectly reliable: vision-language systems can miss
-content or hallucinate plausible details. Gemini confidence and measured
-darkness/blur add explicit context, but no model can guarantee that every
-description is correct or 100% certain.
+Gemini is prompted to read only visible text (OCR-like interpretation) and to
+report uncertainty rather than guess. BLIP generates a general image caption; it
+is not presented as OCR or a complete object detector. Neither model is perfectly
+reliable: vision-language systems can miss content or hallucinate plausible
+details. Gemini confidence and measured darkness/blur add explicit caution, but
+the numeric confidence is not a calibrated safety guarantee.
 
 ### 4.5 Accessible voice interface
 
-The full current concise description is passed as JSON-escaped English text to
-browser `SpeechSynthesis`, with Listen and Stop controls and a speech-rate slider.
-Browser speech prefers an available English voice commonly identified as
-feminine; voice availability depends on the user's browser and operating system.
-gTTS creates an English MP3 for the current description. The interface uses a `#121212` background,
+The full current description is passed as JSON-escaped text to browser
+`SpeechSynthesis`, with Listen and Stop controls, a speech-rate slider, and
+English, Hindi, and Telugu language selection. gTTS creates an MP3 for the current
+description and selected language. The interface uses a `#121212` background,
 `#00E5FF` actions, `#FFD700` highlights, 20px+ text, 60px+ buttons, and accessible
 button labels.
 
@@ -113,16 +111,16 @@ It was trained at 32x32 resolution to classify images into a fixed set of ten
 classes. An unrelated image was still forced into one of those labels. It did not
 generate language, locate multiple objects, or read text.
 
-### Q4: Why use a vision-language model instead of listing every possible object?
-The set of possible real-world objects is open-ended, so a finite labeled dataset
-cannot cover every object. A pretrained vision-language model can describe many
-subjects without limiting outputs to a fixed set of training labels, although it
-can still make mistakes.
+### Q4: How do OCR and captioning differ?
+OCR extracts readable characters and words from pixels. Image captioning describes
+the broader visual scene in language. Gemini is prompted to attempt both; BLIP is
+used only for captioning and does not claim to provide OCR.
 
 ### Q5: How does VisionPulse check image quality?
-It calculates pixel-based brightness, contrast, dominant color clusters, and
-variance of Laplacian for blur. These values can flag poor image conditions but
-cannot establish what objects are present.
+It calculates pixel-based brightness, contrast, and variance of Laplacian for
+blur. These values can flag poor image conditions but cannot establish what
+objects are present. VisionPulse does not provide color labels because automated
+color names may be wrong.
 
 ### Q6: What is the offline backend?
 Salesforce BLIP image-captioning-base, loaded through Transformers and PyTorch. Its
@@ -142,7 +140,7 @@ imported by the Streamlit app or used to describe uploads.
 - Gemini requests transmit the uploaded image to Google's API when a valid API key
   is configured. Follow Google's service terms and avoid uploading sensitive images.
 - Without the Gemini API, the local BLIP fallback is a captioner only. It cannot
-  reliably read text, enumerate all objects, or assess hazards.
+  reliably perform OCR, enumerate all objects, estimate people, or assess hazards.
 - The first BLIP use needs an internet connection to download model weights; later
   runs can use the cached model files.
 - Poor lighting, blur, occlusion, unusual scenes, and small text reduce accuracy.
@@ -192,17 +190,9 @@ Run the application from the project root:
 streamlit run app.py
 ```
 
-Run the representative image-quality, upload-validation, uncertainty, and
-English-speech tests:
+Run the tests:
 
 ```powershell
-python -m unittest discover -s tests -v
-```
-
-Run the real BLIP integration cases as well (downloads/loads the model on first use):
-
-```powershell
-$env:VISIONPULSE_RUN_MODEL_TESTS = "1"
 python -m unittest discover -s tests -v
 ```
 
